@@ -3,6 +3,7 @@ from unittest.mock import patch
 import orjson
 from django.test import override_settings
 
+from zerver.lib.bot_config import set_bot_config
 from zerver.lib.message import truncate_topic
 from zerver.lib.test_classes import WebhookTestCase
 from zerver.lib.webhooks.git import COMMITS_LIMIT
@@ -859,7 +860,9 @@ A temporary team so that I can get some webhook fixtures!
 
     def test_github_webhook_bad_signature(self) -> None:
         with override_settings(VERIFY_WEBHOOK_SIGNATURES=True):
-            url = self.build_webhook_url(webhook_secret=self.WEBHOOK_TEST_SECRET)
+            url = self.build_webhook_url()
+            set_bot_config(self.test_user, "webhook_secret", self.WEBHOOK_TEST_SECRET)
+            
             result = self.client_post(
                 url,
                 self.get_payload("ping"),
@@ -890,10 +893,12 @@ A temporary team so that I can get some webhook fixtures!
             self.check_webhook("ping", TOPIC_REPO, expected_message)
 
     def test_github_webhook_missing_secret(self) -> None:
-        """Verifies that the backend drops the request if the webhook url
-        is invoked without providing the required webhook_secret parameter."""
+        """Verifies that the backend drops the request if the webhook secret
+        is not configured in BotConfigData."""
         with override_settings(VERIFY_WEBHOOK_SIGNATURES=True):
             url = self.build_webhook_url()
+            set_bot_config(self.test_user, "webhook_secret", "")
+
             result = self.client_post(
                 url,
                 self.get_payload("ping"),
@@ -902,7 +907,7 @@ A temporary team so that I can get some webhook fixtures!
             )
             self.assert_json_error(
                 result,
-                "The webhook secret is missing. Please set the webhook_secret while generating the URL.",
+                "Webhook secret is not configured for this bot.",
             )
 
 
