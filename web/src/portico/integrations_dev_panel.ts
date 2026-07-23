@@ -238,9 +238,6 @@ function update_url(): void {
             }
         }
         const webhook_secret = $<HTMLInputElement>("input#webhook_secret").val()!;
-        if (webhook_secret !== "") {
-            params.set("webhook_secret", webhook_secret);
-        }
         const url = `${url_base}${integration_name}?${params.toString()}`;
         url_field!.value = url;
 
