@@ -324,15 +324,19 @@ def parse_multipart_string(body: str) -> dict[str, str]:
 def validate_webhook_delivery(
     request: HttpRequest, signature_header_name: str, algorithm: str = "sha256"
 ) -> None:
+    assert request.user.is_authenticated
+    user_profile = request.user
+    assert isinstance(user_profile, UserProfile)
+
     try:
-        config = get_bot_config(request.user)
+        config = get_bot_config(user_profile)
         webhook_secret = config.get("webhook_secret", "")
     except ConfigError:
         webhook_secret = ""
 
     if not webhook_secret:
-        raise JsonableError(_("Webhook secret is not configured for this bot."))
-    
+        return
+
     signature_header = request.headers.get(signature_header_name, "")
     signature = signature_header.split("=")[-1] if "=" in signature_header else signature_header
 
@@ -340,7 +344,10 @@ def validate_webhook_delivery(
 
     try:
         validate_webhook_signature(
-            request=request, payload=payload, signature=signature, algorithm=algorithm
+            payload=payload,
+            signature=signature,
+            secret=webhook_secret,
+            algorithm=algorithm,
         )
     except JsonableError:
         raise
