@@ -14,6 +14,7 @@ import {
     EMBEDDED_BOT_TYPE,
     GENERIC_BOT_TYPE,
     INCOMING_WEBHOOK_BOT_TYPE,
+    INCOMING_WEBHOOK_BOT_TYPE,
     INCOMING_WEBHOOK_BOT_TYPE_INT,
     OUTGOING_WEBHOOK_BOT_TYPE,
     OUTGOING_WEBHOOK_BOT_TYPE_INT,
@@ -303,9 +304,9 @@ export function add_a_new_bot(): void {
                 const config_data: Record<string, string> = {};
                 $<HTMLInputElement>("#webhook_secret_inputbox input").each(function () {
                     const key = $(this).attr("name")!;
-                    const raw_val = $(this).val();
-                    if (typeof raw_val === "string" && raw_val.trim() !== "") {
-                        config_data[key] = raw_val.trim();
+                    const value = $(this).val()?.trim();
+                    if (value) {
+                        config_data[key] = value;
                     }
                 });
                 if (Object.keys(config_data).length > 0) {
@@ -352,6 +353,7 @@ export function add_a_new_bot(): void {
 
     function set_up_form_fields(): void {
         $("#create_bot_type").val(INCOMING_WEBHOOK_BOT_TYPE).trigger("change");
+        $("#create_bot_type").val(INCOMING_WEBHOOK_BOT_TYPE).trigger("change");
         $("#payload_url_inputbox").hide();
         $("#create_payload_url").val("");
         $("#service_name_list").hide();
@@ -379,7 +381,13 @@ export function add_a_new_bot(): void {
             $("#create_payload_url").removeClass("required");
 
             $("#webhook_secret_inputbox").hide();
+
+            $("#webhook_secret_inputbox").hide();
             switch (bot_type) {
+                case INCOMING_WEBHOOK_BOT_TYPE: {
+                    $("#webhook_secret_inputbox").show();
+                    break;
+                }
                 case INCOMING_WEBHOOK_BOT_TYPE: {
                     $("#webhook_secret_inputbox").show();
                     break;
@@ -398,6 +406,7 @@ export function add_a_new_bot(): void {
                 }
             }
         });
+        $("#create_bot_type").val(INCOMING_WEBHOOK_BOT_TYPE).trigger("change");
         $("#create_bot_type").val(INCOMING_WEBHOOK_BOT_TYPE).trigger("change");
         $("#select_service_name").on("change", () => {
             $("#config_inputbox").children().hide();
