@@ -958,7 +958,6 @@ export function show_edit_bot_info_modal(user_id: number, $container: JQuery): v
             contentType: false,
             success() {
                 $("#bot-edit-form-error").hide();
-                $("#edit_webhook_secret").val("");
                 avatar_widget.clear();
                 hide_button_spinner($submit_button);
                 original_values = get_current_values($("#bot-edit-form"));
