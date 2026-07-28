@@ -2382,7 +2382,6 @@ class BotTest(ZulipTestCase, UploadSerializeMixin):
 
         bot = self.get_bot_user(bot_email)
         config_data = get_bot_config(bot)
-        print(config_data)
         self.assertEqual(config_data["webhook_secret"], "")
 
     def test_get_bot_api_key(self) -> None:

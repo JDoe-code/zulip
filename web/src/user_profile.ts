@@ -875,7 +875,32 @@ export function show_edit_bot_info_modal(user_id: number, $container: JQuery): v
     const bot_type = bot.bot_type.toString();
     const services = bot_data.get_services(bot.user_id);
     const service = services?.[0];
+    let is_delete_requested = false;
     edit_bot_post_render();
+
+    $("#bot-edit-form").on("click", "#clear_webhook_secret_button", (e) => {
+        e.preventDefault();
+        is_delete_requested = true;
+
+        // Clear the input value and set visual feedback
+        const $secret_input = $("#edit_webhook_secret");
+        $secret_input.val("");
+        $secret_input.attr(
+            "placeholder",
+            $t({defaultMessage: "Secret will be deleted when saved."}),
+        );
+
+        // Notify form handler that a change was made so the save button is enabled
+        $("#user-profile-modal .dialog_submit_button").prop("disabled", false);
+    });
+
+    // If the user types anything manually into the input, reset the clear flag
+    $("#bot-edit-form").on("input", "#edit_webhook_secret", function () {
+        if ($(this).val() !== "") {
+            $(this).data("clear-secret", false);
+        }
+    });
+
     original_values = get_current_values($("#bot-edit-form"));
     $("#bot-edit-form").on("input", "input, select, button", (e) => {
         e.preventDefault();
@@ -933,7 +958,10 @@ export function show_edit_bot_info_modal(user_id: number, $container: JQuery): v
             formData.append("config_data", JSON.stringify(config_data));
         } else if (bot_type === INCOMING_WEBHOOK_BOT_TYPE) {
             const webhook_secret = $<HTMLInputElement>("#edit_webhook_secret").val()?.trim();
-            if (webhook_secret) {
+            if (is_delete_requested) {
+                formData.append("config_data", JSON.stringify({webhook_secret: ""}));
+                is_delete_requested = false;
+            } else if (webhook_secret) {
                 formData.append("config_data", JSON.stringify({webhook_secret}));
             }
         }
