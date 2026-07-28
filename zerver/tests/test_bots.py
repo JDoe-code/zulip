@@ -2329,6 +2329,62 @@ class BotTest(ZulipTestCase, UploadSerializeMixin):
         with self.assertRaisesMessage(ConfigError, "No config data available."):
             get_bot_config(new_bot)
 
+    def test_patch_incoming_webhook_bot_add_secret(self) -> None:
+        self.login("hamlet")
+        self.create_bot(bot_type=UserProfile.INCOMING_WEBHOOK_BOT)
+
+        bot_email = "hambot-bot@zulip.testserver"
+        bot_id = self.get_bot_user(bot_email).id
+
+        bot_update = {
+            "config_data": orjson.dumps({"webhook_secret": "test-secret-key-123"}).decode()
+        }
+        result = self.client_patch(f"/json/bots/{bot_id}", bot_update)
+        self.assert_json_success(result)
+
+        bot = self.get_bot_user(bot_email)
+        config_data = get_bot_config(bot)
+        self.assertEqual(config_data["webhook_secret"], "test-secret-key-123")
+
+    def test_patch_incoming_webhook_bot_update_secret(self) -> None:
+        self.login("hamlet")
+        self.create_bot(
+            bot_type=UserProfile.INCOMING_WEBHOOK_BOT,
+            config_data=orjson.dumps({"webhook_secret": "old-test-secret-123"}).decode(),
+        )
+
+        bot_email = "hambot-bot@zulip.testserver"
+        bot_id = self.get_bot_user(bot_email).id
+
+        bot_update = {
+            "config_data": orjson.dumps({"webhook_secret": "new-test-secret-123"}).decode()
+        }
+        result = self.client_patch(f"/json/bots/{bot_id}", bot_update)
+        self.assert_json_success(result)
+
+        bot = self.get_bot_user(bot_email)
+        config_data = get_bot_config(bot)
+        self.assertEqual(config_data["webhook_secret"], "new-test-secret-123")
+
+    def test_patch_incoming_webhook_bot_clear_secret(self) -> None:
+        self.login("hamlet")
+        self.create_bot(
+            bot_type=UserProfile.INCOMING_WEBHOOK_BOT,
+            config_data=orjson.dumps({"webhook_secret": "test-secret-key-123"}).decode(),
+        )
+
+        bot_email = "hambot-bot@zulip.testserver"
+        bot_id = self.get_bot_user(bot_email).id
+
+        bot_update = {"config_data": orjson.dumps({"webhook_secret": ""}).decode()}
+        result = self.client_patch(f"/json/bots/{bot_id}", bot_update)
+        self.assert_json_success(result)
+
+        bot = self.get_bot_user(bot_email)
+        config_data = get_bot_config(bot)
+        print(config_data)
+        self.assertEqual(config_data["webhook_secret"], "")
+
     def test_get_bot_api_key(self) -> None:
         self.login("hamlet")
         self.create_bot()
