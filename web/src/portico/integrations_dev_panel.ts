@@ -238,9 +238,6 @@ function update_url(): void {
             }
         }
         const webhook_secret = $<HTMLInputElement>("input#webhook_secret").val()!;
-        if (webhook_secret !== "") {
-            params.set("webhook_secret", webhook_secret);
-        }
         const url = `${url_base}${integration_name}?${params.toString()}`;
         url_field!.value = url;
 
@@ -263,7 +260,7 @@ function sync_signature_headers(integration_name: string, webhook_secret: string
         }
     }
 
-    if (last_computed_header_key && last_computed_header_key in headers_object) {
+    if (last_computed_header_key && Object.hasOwn(headers_object, last_computed_header_key)) {
         Reflect.deleteProperty(headers_object, last_computed_header_key);
     }
 
@@ -278,7 +275,7 @@ function sync_signature_headers(integration_name: string, webhook_secret: string
     }
 
     const raw_payload = $<HTMLTextAreaElement>("textarea#fixture_body").val() ?? "";
-    let cleaned_payload = raw_payload;
+    let cleaned_payload: string;
 
     try {
         cleaned_payload = JSON.stringify(JSON.parse(raw_payload));
