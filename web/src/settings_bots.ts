@@ -14,6 +14,7 @@ import {
     EMBEDDED_BOT_TYPE,
     GENERIC_BOT_TYPE,
     INCOMING_WEBHOOK_BOT_TYPE,
+    INCOMING_WEBHOOK_BOT_TYPE,
     INCOMING_WEBHOOK_BOT_TYPE_INT,
     OUTGOING_WEBHOOK_BOT_TYPE,
     OUTGOING_WEBHOOK_BOT_TYPE_INT,
@@ -303,9 +304,9 @@ export function add_a_new_bot(): void {
                 const config_data: Record<string, string> = {};
                 $<HTMLInputElement>("#webhook_secret_inputbox input").each(function () {
                     const key = $(this).attr("name")!;
-                    const value = $(this).val()?.trim()!;
-                    if (value) {
-                        config_data[key] = value;
+                    const raw_val = $(this).val();
+                    if (typeof raw_val === "string" && raw_val.trim() !== "") {
+                        config_data[key] = raw_val.trim();
                     }
                 });
                 if (Object.keys(config_data).length > 0) {
@@ -352,6 +353,7 @@ export function add_a_new_bot(): void {
 
     function set_up_form_fields(): void {
         $("#create_bot_type").val(INCOMING_WEBHOOK_BOT_TYPE).trigger("change");
+        $("#create_bot_type").val(INCOMING_WEBHOOK_BOT_TYPE).trigger("change");
         $("#payload_url_inputbox").hide();
         $("#create_payload_url").val("");
         $("#service_name_list").hide();
@@ -379,7 +381,13 @@ export function add_a_new_bot(): void {
             $("#create_payload_url").removeClass("required");
 
             $("#webhook_secret_inputbox").hide();
+
+            $("#webhook_secret_inputbox").hide();
             switch (bot_type) {
+                case INCOMING_WEBHOOK_BOT_TYPE: {
+                    $("#webhook_secret_inputbox").show();
+                    break;
+                }
                 case INCOMING_WEBHOOK_BOT_TYPE: {
                     $("#webhook_secret_inputbox").show();
                     break;
@@ -398,6 +406,7 @@ export function add_a_new_bot(): void {
                 }
             }
         });
+        $("#create_bot_type").val(INCOMING_WEBHOOK_BOT_TYPE).trigger("change");
         $("#create_bot_type").val(INCOMING_WEBHOOK_BOT_TYPE).trigger("change");
         $("#select_service_name").on("change", () => {
             $("#config_inputbox").children().hide();
@@ -763,11 +772,12 @@ function set_up_bot_handlers($container: JQuery): void {
         add_a_new_bot();
     });
 
-    $container.find(".download-botserverrc-file").on("click", function () {
+    $container.find(".download-botserverrc-file").on("click", (e) => {
+        const $currentTarget = $(e.currentTarget);
         void (async () => {
             let content = "";
-            buttons.show_button_loading_indicator($(this));
-            $(this).prop("disabled", true);
+            buttons.show_button_loading_indicator($currentTarget);
+            $currentTarget.prop("disabled", true);
             for (const bot of bot_data.get_all_bots_for_current_user()) {
                 if (bot.is_active && bot.bot_type === OUTGOING_WEBHOOK_BOT_TYPE_INT) {
                     const bot_token = bot_helper.get_outgoing_webhook_token(bot.user_id);
@@ -776,15 +786,15 @@ function set_up_bot_handlers($container: JQuery): void {
                         $("#admin-your-bots-list .bot-list-error"),
                     );
                     if (!api_key) {
-                        buttons.hide_button_loading_indicator($(this));
-                        $(this).prop("disabled", false);
+                        buttons.hide_button_loading_indicator($currentTarget);
+                        $currentTarget.prop("disabled", false);
                         return;
                     }
                     content += generate_botserverrc_content(bot.email, api_key, bot_token);
                 }
             }
-            buttons.hide_button_loading_indicator($(this));
-            $(this).prop("disabled", false);
+            buttons.hide_button_loading_indicator($currentTarget);
+            $currentTarget.prop("disabled", false);
 
             $container
                 .find(".hidden-botserverrc-download")
@@ -797,14 +807,15 @@ function set_up_bot_handlers($container: JQuery): void {
     });
 
     $container.on("click", ".download-bot-zuliprc-button", function (this: HTMLElement) {
+        const $button = $(this);
         void (async () => {
-            const $row = $(this).closest(".user_row");
+            const $row = $button.closest(".user_row");
             const $zuliprc_link = $row.find(".hidden-zuliprc-download");
             const bot_id = Number.parseInt($zuliprc_link.attr("data-user-id")!, 10);
             const api_key = await bot_helper.fetch_bot_api_key(
                 bot_id,
                 $row.closest(".bot-settings-section").find(".bot-list-error"),
-                $(this),
+                $button,
             );
             if (!api_key) {
                 return;
