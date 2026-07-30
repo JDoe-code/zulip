@@ -57,6 +57,7 @@ from zerver.actions.streams import bulk_add_subscriptions, bulk_remove_subscript
 from zerver.actions.user_settings import do_change_full_name, do_change_user_setting
 from zerver.actions.users import do_change_user_role
 from zerver.decorator import do_two_factor_login
+from zerver.lib.bot_config import set_bot_config
 from zerver.lib.cache import bounce_key_prefix_for_testing
 from zerver.lib.email_notifications import MissedMessageData, handle_missedmessage_emails
 from zerver.lib.initial_password import initial_password
@@ -2656,17 +2657,12 @@ You can fix this by adding "{complete_event_type}" to ALL_EVENT_TYPES for this w
         self.subscribe(self.test_user, self.channel_name)
 
         url = getattr(self, "url", None)
-        webhook_secret = getattr(self, "WEBHOOK_TEST_SECRET", None)
-
         if url is None:
-            if webhook_secret is not None:  # nocoverage
-                url = self.build_webhook_url(webhook_secret=webhook_secret)  # nocoverage
-            else:
-                url = self.build_webhook_url()  # nocoverage
-        else:
-            if webhook_secret is not None and "webhook_secret=" not in url:
-                separator = "&" if "?" in url else "?"
-                url = f"{url}{separator}webhook_secret={quote(webhook_secret)}"
+            url = self.build_webhook_url()  # nocoverage
+
+        webhook_secret = getattr(self, "WEBHOOK_TEST_SECRET", None)
+        if webhook_secret is not None:
+            set_bot_config(self.test_user, "webhook_secret", webhook_secret)
 
         payload = self.get_payload(fixture_name)
         if content_type is not None:
@@ -2758,6 +2754,11 @@ one or more new messages.
         Most webhooks send to streams, and you will want to look at
         check_webhook.
         """
+
+        webhook_secret = getattr(self, "WEBHOOK_TEST_SECRET", None)
+        if webhook_secret is not None:
+            set_bot_config(self.test_user, "webhook_secret", webhook_secret)  # nocoverage
+
         payload = self.get_payload(fixture_name)
         extra["content_type"] = content_type
 
