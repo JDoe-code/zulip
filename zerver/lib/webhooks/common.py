@@ -322,11 +322,11 @@ def parse_multipart_string(body: str) -> dict[str, str]:
 
 
 def validate_webhook_delivery(
-    request: HttpRequest, signature_header_name: str, algorithm: str = "sha256"
+    request: HttpRequest, signature_header_name: str, integration_name: str, algorithm: str = "sha256"
 ) -> None:
     try:
-        config = get_bot_config(request.user)
-        webhook_secret = config.get("webhook_secret", "")
+        config = get_bot_config(user_profile)
+        webhook_secret = config.get(f"{integration_name.lower()}-webhook_secret", "")
     except ConfigError:
         webhook_secret = ""
 

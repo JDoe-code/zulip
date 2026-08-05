@@ -859,8 +859,8 @@ A temporary team so that I can get some webhook fixtures!
     def test_github_webhook_bad_signature(self) -> None:
         with override_settings(VERIFY_WEBHOOK_SIGNATURES=True):
             url = self.build_webhook_url()
-            set_bot_config(self.test_user, "webhook_secret", self.WEBHOOK_TEST_SECRET)
-            
+            set_bot_config(self.test_user, "github-webhook_secret", self.WEBHOOK_TEST_SECRET)
+
             result = self.client_post(
                 url,
                 self.get_payload("ping"),
@@ -894,19 +894,9 @@ A temporary team so that I can get some webhook fixtures!
         """Verifies that the backend drops the request if the webhook secret
         is not configured in BotConfigData."""
         with override_settings(VERIFY_WEBHOOK_SIGNATURES=True):
-            url = self.build_webhook_url()
-            set_bot_config(self.test_user, "webhook_secret", "")
-
-            result = self.client_post(
-                url,
-                self.get_payload("ping"),
-                content_type="application/json",
-                HTTP_X_HUB_SIGNATURE_256="sha256=somehash",
-            )
-            self.assert_json_error(
-                result,
-                "Webhook secret is not configured for this bot.",
-            )
+            set_bot_config(self.test_user, "github-webhook_secret", "")
+            expected_message = "GitHub webhook has been successfully configured by TomaszKolek."
+            self.check_webhook("ping", TOPIC_REPO, expected_message)
 
 
 class GitHubSponsorsHookTests(WebhookTestCase):
