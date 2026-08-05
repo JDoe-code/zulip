@@ -322,7 +322,10 @@ def parse_multipart_string(body: str) -> dict[str, str]:
 
 
 def validate_webhook_delivery(
-    request: HttpRequest, signature_header_name: str, integration_name: str, algorithm: str = "sha256"
+    request: HttpRequest,
+    signature_header_name: str,
+    integration_name: str,
+    algorithm: str = "sha256",
 ) -> None:
     assert request.user.is_authenticated
     user_profile = request.user

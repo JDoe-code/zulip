@@ -188,7 +188,7 @@ class WebhooksCommonTestCase(ZulipTestCase):
             force_bytes(webhook_secret), force_bytes(payload), hashlib.sha256
         ).hexdigest()
 
-        set_bot_config(webhook_bot, f"{integration_name}webhook_secret", webhook_secret)
+        set_bot_config(webhook_bot, f"{integration_name.lower()}-webhook_secret", webhook_secret)
         request = HostRequestMock(meta_data={"HTTP_X_HUB_SIGNATURE_256": f"sha256={signature}"})
         request.user = webhook_bot
         request.GET = QueryDict("", mutable=True)
