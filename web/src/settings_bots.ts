@@ -1,4 +1,4 @@
-import $ from "jquery";
+import {$} from "jquery";
 import assert from "minimalistic-assert";
 import type * as tippy from "tippy.js";
 
@@ -12,8 +12,7 @@ import type {Bot} from "./bot_data.ts";
 import * as bot_helper from "./bot_helper.ts";
 import {
     EMBEDDED_BOT_TYPE,
-    GENERIC_BOT_TYPE,
-    INCOMING_WEBHOOK_BOT_TYPE,
+    GENERIC_BOT_TYPE_INT,
     INCOMING_WEBHOOK_BOT_TYPE_INT,
     OUTGOING_WEBHOOK_BOT_TYPE,
     OUTGOING_WEBHOOK_BOT_TYPE_INT,
@@ -299,20 +298,6 @@ export function add_a_new_bot(): void {
                 formData.append("interface_type", interface_type);
                 break;
             }
-            case INCOMING_WEBHOOK_BOT_TYPE: {
-                const config_data: Record<string, string> = {};
-                $<HTMLInputElement>("#webhook_secret_inputbox input").each(function () {
-                    const key = $(this).attr("name")!;
-                    const raw_val = $(this).val();
-                    if (typeof raw_val === "string" && raw_val.trim() !== "") {
-                        config_data[key] = raw_val.trim();
-                    }
-                });
-                if (Object.keys(config_data).length > 0) {
-                    formData.append("config_data", JSON.stringify(config_data));
-                }
-                break;
-            }
             case EMBEDDED_BOT_TYPE: {
                 formData.append("service_name", service_name);
                 const config_data: Record<string, string> = {};
@@ -351,7 +336,7 @@ export function add_a_new_bot(): void {
     }
 
     function set_up_form_fields(): void {
-        $("#create_bot_type").val(INCOMING_WEBHOOK_BOT_TYPE).trigger("change");
+        $("#create_bot_type").val(INCOMING_WEBHOOK_BOT_TYPE_INT);
         $("#payload_url_inputbox").hide();
         $("#create_payload_url").val("");
         $("#service_name_list").hide();
@@ -377,13 +362,7 @@ export function add_a_new_bot(): void {
 
             $("#payload_url_inputbox").hide();
             $("#create_payload_url").removeClass("required");
-
-            $("#webhook_secret_inputbox").hide();
             switch (bot_type) {
-                case INCOMING_WEBHOOK_BOT_TYPE: {
-                    $("#webhook_secret_inputbox").show();
-                    break;
-                }
                 case OUTGOING_WEBHOOK_BOT_TYPE: {
                     $("#payload_url_inputbox").show();
                     $("#create_payload_url").addClass("required");
@@ -398,7 +377,7 @@ export function add_a_new_bot(): void {
                 }
             }
         });
-        $("#create_bot_type").val(INCOMING_WEBHOOK_BOT_TYPE).trigger("change");
+
         $("#select_service_name").on("change", () => {
             $("#config_inputbox").children().hide();
             const selected_bot = $<HTMLSelectOneElement>(
@@ -476,7 +455,7 @@ function bot_info(bot_user_id: number): BotInfo {
             : {
                   bot_owner_id: null,
               }),
-        show_download_zuliprc_button: is_bot_owner && bot_user.bot_type === GENERIC_BOT_TYPE,
+        show_download_zuliprc_button: is_bot_owner && bot_user.bot_type === GENERIC_BOT_TYPE_INT,
         show_generate_integration_url_button:
             can_modify_bot && bot_user.bot_type === INCOMING_WEBHOOK_BOT_TYPE_INT,
     };
@@ -763,11 +742,11 @@ function set_up_bot_handlers($container: JQuery): void {
         add_a_new_bot();
     });
 
-    $container.find(".download-botserverrc-file").on("click", (e) => {
+    $container.find(".download-botserverrc-file").on("click", function () {
         void (async () => {
             let content = "";
-            buttons.show_button_loading_indicator($(e.currentTarget));
-            $(e.currentTarget).prop("disabled", true);
+            buttons.show_button_loading_indicator($(this));
+            $(this).prop("disabled", true);
             for (const bot of bot_data.get_all_bots_for_current_user()) {
                 if (bot.is_active && bot.bot_type === OUTGOING_WEBHOOK_BOT_TYPE_INT) {
                     const bot_token = bot_helper.get_outgoing_webhook_token(bot.user_id);
@@ -776,15 +755,15 @@ function set_up_bot_handlers($container: JQuery): void {
                         $("#admin-your-bots-list .bot-list-error"),
                     );
                     if (!api_key) {
-                        buttons.hide_button_loading_indicator($(e.currentTarget));
-                        $(e.currentTarget).prop("disabled", false);
+                        buttons.hide_button_loading_indicator($(this));
+                        $(this).prop("disabled", false);
                         return;
                     }
                     content += generate_botserverrc_content(bot.email, api_key, bot_token);
                 }
             }
-            buttons.hide_button_loading_indicator($(e.currentTarget));
-            $(e.currentTarget).prop("disabled", false);
+            buttons.hide_button_loading_indicator($(this));
+            $(this).prop("disabled", false);
 
             $container
                 .find(".hidden-botserverrc-download")

@@ -1,6 +1,7 @@
 import ClipboardJS from "clipboard";
 import {parseISO} from "date-fns";
-import $ from "jquery";
+import {parseOneAddress} from "email-addresses";
+import {$} from "jquery";
 import _ from "lodash";
 import assert from "minimalistic-assert";
 import type * as tippy from "tippy.js";
@@ -23,7 +24,6 @@ import * as bot_data from "./bot_data.ts";
 import * as bot_helper from "./bot_helper.ts";
 import {
     EMBEDDED_BOT_TYPE,
-    INCOMING_WEBHOOK_BOT_TYPE,
     INCOMING_WEBHOOK_BOT_TYPE_INT,
     OUTGOING_WEBHOOK_BOT_TYPE,
 } from "./bot_type_values.ts";
@@ -851,7 +851,11 @@ export function show_edit_bot_info_modal(user_id: number, $container: JQuery): v
 
     assert(bot.is_bot);
     // Extract short_name from email (format: {short_name}-bot@domain)
-    const short_name = bot.email.split("@")[0]!.slice(0, -4);
+    const parsed_address = parseOneAddress(bot.email);
+    assert(parsed_address?.type === "mailbox");
+    const short_name = parsed_address.local.endsWith("-bot")
+        ? parsed_address.local.slice(0, -"-bot".length)
+        : parsed_address.local;
     const modal_content_html = render_edit_bot_form({
         user_id,
         is_active,
@@ -875,32 +879,7 @@ export function show_edit_bot_info_modal(user_id: number, $container: JQuery): v
     const bot_type = bot.bot_type.toString();
     const services = bot_data.get_services(bot.user_id);
     const service = services?.[0];
-    let is_delete_requested = false;
     edit_bot_post_render();
-
-    $("#bot-edit-form").on("click", "#clear_webhook_secret_button", (e) => {
-        e.preventDefault();
-        is_delete_requested = true;
-
-        // Clear the input value and set visual feedback
-        const $secret_input = $("#edit_webhook_secret");
-        $secret_input.val("");
-        $secret_input.attr(
-            "placeholder",
-            $t({defaultMessage: "Secret will be deleted when saved."}),
-        );
-
-        // Notify form handler that a change was made so the save button is enabled
-        $("#user-profile-modal .dialog_submit_button").prop("disabled", false);
-    });
-
-    // If the user types anything manually into the input, reset the clear flag
-    $("#bot-edit-form").on("input", "#edit_webhook_secret", function () {
-        if ($(this).val() !== "") {
-            $(this).data("clear-secret", false);
-        }
-    });
-
     original_values = get_current_values($("#bot-edit-form"));
     $("#bot-edit-form").on("input", "input, select, button", (e) => {
         e.preventDefault();
@@ -956,14 +935,6 @@ export function show_edit_bot_info_modal(user_id: number, $container: JQuery): v
                 config_data[$(this).attr("name")!] = $(this).val()!;
             });
             formData.append("config_data", JSON.stringify(config_data));
-        } else if (bot_type === INCOMING_WEBHOOK_BOT_TYPE) {
-            const webhook_secret = $<HTMLInputElement>("#edit_webhook_secret").val()?.trim();
-            if (is_delete_requested) {
-                formData.append("config_data", JSON.stringify({webhook_secret: ""}));
-                is_delete_requested = false;
-            } else if (webhook_secret) {
-                formData.append("config_data", JSON.stringify({webhook_secret}));
-            }
         }
 
         const files = util.the(
@@ -986,7 +957,6 @@ export function show_edit_bot_info_modal(user_id: number, $container: JQuery): v
             contentType: false,
             success() {
                 $("#bot-edit-form-error").hide();
-                $("#edit-webhook-secret").val("");
                 avatar_widget.clear();
                 hide_button_spinner($submit_button);
                 original_values = get_current_values($("#bot-edit-form"));
