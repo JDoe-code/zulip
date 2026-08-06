@@ -6,7 +6,7 @@ import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
-from typing import Annotated, Any, TypeAlias
+from typing import Annotated, Any, TypeAlias, Optional
 from urllib.parse import unquote
 
 import requests
@@ -74,6 +74,14 @@ class WebhookConfigOption:
     label: str
     validator: Callable[[str, str], str | bool | None]
 
+@dataclass(frozen=True)
+class WebhookSignatureConfig:
+    integration_name: str
+    header: str
+    algorithm: str = "sha256"
+    prefix: str = ""
+    custom_formatter: Optional[Callable[[str], str]] = None
+    # This will override the default compute_webhook_signature function if provided for unique formats
 
 @dataclass
 class WebhookUrlOption:
@@ -323,34 +331,27 @@ def parse_multipart_string(body: str) -> dict[str, str]:
 
 def validate_webhook_delivery(
     request: HttpRequest,
-    signature_header_name: str,
-    integration_name: str,
-    algorithm: str = "sha256",
+    user_profile: UserProfile,
+    config: WebhookSignatureConfig,
 ) -> None:
-    assert request.user.is_authenticated
-    user_profile = request.user
-    assert isinstance(user_profile, UserProfile)
-
     try:
-        config = get_bot_config(user_profile)
-        webhook_secret = config.get(f"{integration_name.lower()}-webhook_secret", "")
+        bot_config = get_bot_config(user_profile)
+        webhook_secret = bot_config.get(f"{config.integration_name.lower()}-webhook_secret", "")
     except ConfigError:
         webhook_secret = ""
 
     if not webhook_secret:
         return
 
-    signature_header = request.headers.get(signature_header_name, "")
-    signature = signature_header.split("=")[-1] if "=" in signature_header else signature_header
-
+    signature_header = request.headers.get(config.header, "")
     payload = request.body.decode("utf-8")
 
     try:
         validate_webhook_signature(
             payload=payload,
-            signature=signature,
+            signature=signature_header,
             secret=webhook_secret,
-            algorithm=algorithm,
+            config=config
         )
     except JsonableError:
         raise
@@ -362,30 +363,55 @@ def validate_webhook_signature(
     payload: str,
     signature: str,
     secret: str,
-    algorithm: str = "sha256",
+    config: WebhookSignatureConfig
 ) -> None:
     if not settings.VERIFY_WEBHOOK_SIGNATURES:  # nocoverage
         return
 
-    if algorithm not in hashlib.algorithms_available:
+    if config.algorithm not in hashlib.algorithms_available:
         raise AssertionError(
-            _("The algorithm '{algorithm}' is not supported.").format(algorithm=algorithm)
+            _("The algorithm '{algorithm}' is not supported.").format(algorithm=config.algorithm)
         )
 
     if not secret:
         raise JsonableError(_("Webhook secret is not configured for this bot."))
 
-    webhook_secret_bytes = force_bytes(secret)
-    payload_bytes = force_bytes(payload)
+    _, expected_header_val = compute_webhook_signature(
+        force_bytes(secret),
+        force_bytes(payload),
+        config,
+    )
 
-    signed_payload = hmac.new(
-        webhook_secret_bytes,
-        payload_bytes,
-        algorithm,
-    ).hexdigest()
-
-    if not constant_time_compare(signed_payload, signature):
+    if not constant_time_compare(expected_header_val, signature):
         raise JsonableError(_("Webhook signature verification failed."))
+
+def compute_webhook_signature(
+    secret_bytes: bytes,
+    payload_bytes: bytes,
+    config: WebhookSignatureConfig,
+) -> tuple[str, str]:
+    """
+    Computes the HMAC signature and header for a webhook payload dynamically.
+    Returns: (header_name, formatted_header_value)
+    e.g., ("X-Hub-Signature-256", "sha256=a1b2c3d4...")
+    """
+    # 1. Compute HMAC digest using the configured algorithm
+    signer = hmac.new(
+        secret_bytes,
+        payload_bytes,
+        config.algorithm,
+    )
+    digest = signer.hexdigest()
+
+    # 2. Check if a custom formatter is provided, otherwise use config.prefix
+    if config.custom_formatter is not None:
+        header_value = config.custom_formatter(digest)
+    elif config.prefix:
+        header_value = f"{config.prefix}{digest}"
+    else:
+        header_value = digest
+
+    return config.header, header_value
 
 
 def guess_zulip_user_from_external_account(
