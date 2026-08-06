@@ -1,7 +1,5 @@
 import asyncio
 import base64
-import hashlib
-import hmac
 import os
 import re
 import shutil
@@ -61,6 +59,7 @@ from zerver.lib.bot_config import set_bot_config
 from zerver.lib.cache import bounce_key_prefix_for_testing
 from zerver.lib.email_notifications import MissedMessageData, handle_missedmessage_emails
 from zerver.lib.initial_password import initial_password
+from zerver.lib.integrations import WEBHOOK_SIGNATURE_CONFIGS
 from zerver.lib.mdiff import diff_strings
 from zerver.lib.message import access_message
 from zerver.lib.notification_data import UserMessageNotificationsData
@@ -98,6 +97,7 @@ from zerver.lib.user_groups import get_system_user_group_for_user
 from zerver.lib.webhooks.common import (
     call_fixture_to_headers,
     check_send_webhook_message,
+    compute_webhook_signature,
     standardize_headers,
 )
 from zerver.models import (
@@ -2660,37 +2660,39 @@ You can fix this by adding "{complete_event_type}" to ALL_EVENT_TYPES for this w
             url = self.build_webhook_url()  # nocoverage
 
         webhook_secret = getattr(self, "WEBHOOK_TEST_SECRET", None)
-        if webhook_secret is not None:
-            set_bot_config(self.test_user, "webhook_secret", webhook_secret)
+        config = WEBHOOK_SIGNATURE_CONFIGS.get(self.webhook_dir_name.lower())
+
+        if webhook_secret is not None and config is None:
+            raise AssertionError(
+                f"WEBHOOK_TEST_SECRET was set for '{self.webhook_dir_name}', "
+                f"but no WebhookSignatureConfig is registered in WEBHOOK_SIGNATURE_CONFIGS."
+            )
 
         payload = self.get_payload(fixture_name)
         if content_type is not None:
             extra["content_type"] = content_type
 
-        config = WEBHOOK_SIGNATURE_CONFIGS.get(self.webhook_dir_name.lower())
-        if config is not None and webhook_secret is not None:
+        if webhook_secret is not None and config is not None:
+            set_bot_config(
+                self.test_user,
+                f"{self.webhook_dir_name}-webhook_secret",
+                webhook_secret,
+            )
+
             try:
                 raw_payload = self.get_body(fixture_name)
             except FileNotFoundError:  # nocoverage
                 raw_payload = ""
 
-            header_name, header_val = compute_webhook_signature(
+            header_val = compute_webhook_signature(
                 force_bytes(webhook_secret),
                 force_bytes(raw_payload),
                 config,
-        )
+            )
 
-        signature_header_name = getattr(self, "WEBHOOK_SIGNATURE_HEADER", None)
-        if signature_header_name is not None:
-            try:
-                raw_payload = self.get_body(fixture_name)
-            except FileNotFoundError:  # nocoverage
-                raw_payload = ""
-
-            signature_value = self.get_webhook_signature(force_bytes(raw_payload))
-            if signature_value is not None:
-                django_header = "HTTP_" + signature_header_name.upper().replace("-", "_")
-                extra[django_header] = signature_value
+            django_header = "HTTP_" + config.header.upper().replace("-", "_")
+            if django_header not in extra:
+                extra[django_header] = header_val
 
         headers = call_fixture_to_headers(self.webhook_dir_name, fixture_name)
         headers = standardize_headers(headers)
@@ -2757,7 +2759,9 @@ one or more new messages.
 
         webhook_secret = getattr(self, "WEBHOOK_TEST_SECRET", None)
         if webhook_secret is not None:
-            set_bot_config(self.test_user, "webhook_secret", webhook_secret)  # nocoverage
+            set_bot_config(
+                self.test_user, f"{self.webhook_dir_name}-webhook_secret", webhook_secret
+            )  # nocoverage
 
         payload = self.get_payload(fixture_name)
         extra["content_type"] = content_type

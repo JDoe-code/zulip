@@ -6,7 +6,7 @@ import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
-from typing import Annotated, Any, TypeAlias, Optional
+from typing import Annotated, Any, TypeAlias
 from urllib.parse import unquote
 
 import requests
@@ -74,14 +74,16 @@ class WebhookConfigOption:
     label: str
     validator: Callable[[str, str], str | bool | None]
 
+
 @dataclass(frozen=True)
 class WebhookSignatureConfig:
     integration_name: str
     header: str
     algorithm: str = "sha256"
     prefix: str = ""
-    custom_formatter: Optional[Callable[[str], str]] = None
+    custom_formatter: Callable[[str], str] | None = None
     # This will override the default compute_webhook_signature function if provided for unique formats
+
 
 @dataclass
 class WebhookUrlOption:
@@ -348,10 +350,7 @@ def validate_webhook_delivery(
 
     try:
         validate_webhook_signature(
-            payload=payload,
-            signature=signature_header,
-            secret=webhook_secret,
-            config=config
+            payload=payload, signature=signature_header, secret=webhook_secret, config=config
         )
     except JsonableError:
         raise
@@ -360,10 +359,7 @@ def validate_webhook_delivery(
 
 
 def validate_webhook_signature(
-    payload: str,
-    signature: str,
-    secret: str,
-    config: WebhookSignatureConfig
+    payload: str, signature: str, secret: str, config: WebhookSignatureConfig
 ) -> None:
     if not settings.VERIFY_WEBHOOK_SIGNATURES:  # nocoverage
         return
@@ -376,7 +372,7 @@ def validate_webhook_signature(
     if not secret:
         raise JsonableError(_("Webhook secret is not configured for this bot."))
 
-    _, expected_header_val = compute_webhook_signature(
+    expected_header_val = compute_webhook_signature(
         force_bytes(secret),
         force_bytes(payload),
         config,
@@ -385,17 +381,13 @@ def validate_webhook_signature(
     if not constant_time_compare(expected_header_val, signature):
         raise JsonableError(_("Webhook signature verification failed."))
 
+
 def compute_webhook_signature(
     secret_bytes: bytes,
     payload_bytes: bytes,
     config: WebhookSignatureConfig,
-) -> tuple[str, str]:
-    """
-    Computes the HMAC signature and header for a webhook payload dynamically.
-    Returns: (header_name, formatted_header_value)
-    e.g., ("X-Hub-Signature-256", "sha256=a1b2c3d4...")
-    """
-    # 1. Compute HMAC digest using the configured algorithm
+) -> str:
+    """Computes and formats the HMAC signature for a webhook payload."""
     signer = hmac.new(
         secret_bytes,
         payload_bytes,
@@ -403,15 +395,11 @@ def compute_webhook_signature(
     )
     digest = signer.hexdigest()
 
-    # 2. Check if a custom formatter is provided, otherwise use config.prefix
     if config.custom_formatter is not None:
-        header_value = config.custom_formatter(digest)
-    elif config.prefix:
-        header_value = f"{config.prefix}{digest}"
-    else:
-        header_value = digest
-
-    return config.header, header_value
+        return config.custom_formatter(digest)
+    if config.prefix:
+        return f"{config.prefix}{digest}"
+    return digest
 
 
 def guess_zulip_user_from_external_account(

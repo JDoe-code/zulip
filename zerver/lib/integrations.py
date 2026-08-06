@@ -14,7 +14,12 @@ from django_stubs_ext import StrPromise
 from typing_extensions import override
 
 from zerver.lib.storage import static_path
-from zerver.lib.webhooks.common import PresetUrlOption, WebhookConfigOption, WebhookUrlOption
+from zerver.lib.webhooks.common import (
+    PresetUrlOption,
+    WebhookConfigOption,
+    WebhookSignatureConfig,
+    WebhookUrlOption,
+)
 from zerver.webhooks import fixtureless_integrations
 
 """This module declares all of the (documented) integrations available
@@ -1186,6 +1191,15 @@ INTEGRATIONS_WITHOUT_SCREENSHOTS = (
         "twitter",
     }
 )
+
+WEBHOOK_SIGNATURE_CONFIGS: dict[str, WebhookSignatureConfig] = {
+    "github": WebhookSignatureConfig(
+        integration_name="github",
+        header="X-Hub-Signature-256",
+        algorithm="sha256",
+        prefix="sha256=",
+    ),
+}
 
 NO_SCREENSHOT_CONFIG = INTEGRATIONS_MISSING_SCREENSHOT_CONFIG | INTEGRATIONS_WITHOUT_SCREENSHOTS
 

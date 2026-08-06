@@ -24,7 +24,6 @@ TOPIC_SPONSORS = "sponsors"
 
 
 class GitHubWebhookTest(WebhookTestCase):
-    WEBHOOK_SIGNATURE_HEADER = "X_HUB_Signature_256"
     WEBHOOK_TEST_SECRET = "testingthis"
 
     def test_ping_event(self) -> None:
