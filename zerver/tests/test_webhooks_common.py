@@ -1,5 +1,3 @@
-import hashlib
-import hmac
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -23,8 +21,10 @@ from zerver.lib.webhooks.common import (
     INVALID_JSON_MESSAGE,
     MISSING_EVENT_HEADER_MESSAGE,
     MissingHTTPEventHeaderError,
+    WebhookSignatureConfig,
     call_fixture_to_headers,
     check_send_webhook_message,
+    compute_webhook_signature,
     get_event_header,
     get_service_api_data,
     guess_zulip_user_from_external_account,
@@ -159,20 +159,27 @@ class WebhooksCommonTestCase(ZulipTestCase):
         # Valid signature
         webhook_secret = "test_secret"
         payload = '{"key": "value"}'
-        signature = hmac.new(
-            force_bytes(webhook_secret), force_bytes(payload), hashlib.sha256
-        ).hexdigest()
+        config = WebhookSignatureConfig(
+            integration_name="github",
+            header="X-Hub-Signature-256",
+            algorithm="sha256",
+            prefix="sha256=",
+        )
 
-        request.GET.update({"webhook_secret": webhook_secret})
-        validate_webhook_signature(request, payload, signature)
+        signature = compute_webhook_signature(
+            force_bytes(webhook_secret), force_bytes(payload), config
+        )
+
+        # Valid signature
+        validate_webhook_signature(payload, signature, webhook_secret, config)
 
         # Invalid signature
-        invalid_signature = "invalid_signature"
+        invalid_signature = "sha256=invalid_signature"
         with self.assertRaisesRegex(
             JsonableError,
             "Webhook signature verification failed.",
         ):
-            validate_webhook_signature(request, payload, invalid_signature)
+            validate_webhook_signature(payload, invalid_signature, webhook_secret, config)
 
         # No webhook_secret parameter
         request.GET.clear()
@@ -180,25 +187,31 @@ class WebhooksCommonTestCase(ZulipTestCase):
             JsonableError,
             "The webhook secret is missing. Please set the webhook_secret while generating the URL.",
         ):
-            validate_webhook_signature(request, payload, signature)
+            validate_webhook_signature(payload, signature, secret="", config=config)
 
     @override_settings(VERIFY_WEBHOOK_SIGNATURES=True)
     def test_validate_webhook_delivery(self) -> None:
         webhook_secret = "test_secret"
-        integration_name = "ZulipTestBot"
+        config = WebhookSignatureConfig(
+            integration_name="github",
+            header="X-Hub-Signature-256",
+            algorithm="sha256",
+            prefix="sha256=",
+        )
         payload = '{"key": "value"}'
-        signature = hmac.new(
-            force_bytes(webhook_secret), force_bytes(payload), hashlib.sha256
-        ).hexdigest()
+        signature = compute_webhook_signature(
+            force_bytes(webhook_secret), force_bytes(payload), config
+        )
 
-        set_bot_config(webhook_bot, f"{integration_name.lower()}-webhook_secret", webhook_secret)
-        request = HostRequestMock(meta_data={"HTTP_X_HUB_SIGNATURE_256": f"sha256={signature}"})
+        set_bot_config(webhook_bot, "github-webhook_secret", webhook_secret)
+        request = HostRequestMock(meta_data={"HTTP_X_HUB_SIGNATURE_256": signature})
+        request.user = webhook_bot
         request.GET = QueryDict("", mutable=True)
         request.GET.update({"webhook_secret": webhook_secret})
         request._body = force_bytes(payload)
 
         # Valid signature
-        validate_webhook_delivery(request, "X_HUB_Signature_256", integration_name)
+        validate_webhook_delivery(request, webhook_bot, config)
 
         # Invalid signature
         request.META["HTTP_X_HUB_SIGNATURE_256"] = "sha256=invalid_signature"
@@ -207,12 +220,13 @@ class WebhooksCommonTestCase(ZulipTestCase):
             JsonableError,
             "Webhook signature verification failed.",
         ):
-            validate_webhook_delivery(request, "X_HUB_Signature_256", integration_name)
+            validate_webhook_delivery(request, webhook_bot, config)
 
-        # No webhook_secret parameter
-        request.META["HTTP_X_HUB_SIGNATURE_256"] = f"sha256={signature}"
+        # No webhook_secret configured for this bot skips validation
+        set_bot_config(webhook_bot, "github-webhook_secret", "")
+        request.META["HTTP_X_HUB_SIGNATURE_256"] = signature
         del request.headers
-        validate_webhook_delivery(request, "X_HUB_Signature_256", integration_name)
+        validate_webhook_delivery(request, webhook_bot, config)
 
     def test_check_send_webhook_message_returns_id(self) -> None:
         webhook_bot = get_user("webhook-bot@zulip.com", get_realm("zulip"))
