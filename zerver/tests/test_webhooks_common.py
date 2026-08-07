@@ -12,7 +12,7 @@ from version import ZULIP_VERSION
 from zerver.actions.custom_profile_fields import try_add_realm_custom_profile_field
 from zerver.actions.streams import do_rename_stream
 from zerver.decorator import webhook_view
-from zerver.lib.bot_config import set_bot_config
+from zerver.lib.bot_config import ConfigError, set_bot_config
 from zerver.lib.exceptions import InvalidJSONError, JsonableError
 from zerver.lib.request import RequestNotes
 from zerver.lib.send_email import FromAddress
@@ -199,6 +199,12 @@ class WebhooksCommonTestCase(ZulipTestCase):
         signature = compute_webhook_signature(
             force_bytes(webhook_secret), force_bytes(payload), config
         )
+
+        request = HostRequestMock(meta_data={"HTTP_X_HUB_SIGNATURE_256": signature})
+        request.user = webhook_bot
+        request.GET = QueryDict("", mutable=True)
+        request._body = force_bytes(payload)
+        self.assertIsNone(validate_webhook_delivery(request, webhook_bot, config))
 
         set_bot_config(webhook_bot, "github-webhook_secret", webhook_secret)
         request = HostRequestMock(meta_data={"HTTP_X_HUB_SIGNATURE_256": signature})
