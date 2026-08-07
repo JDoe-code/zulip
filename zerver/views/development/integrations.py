@@ -1,7 +1,4 @@
-import hashlib
-import hmac
 import os
-from collections.abc import Callable
 from contextlib import suppress
 from typing import TYPE_CHECKING, Any
 
@@ -15,10 +12,14 @@ from django.views.decorators.csrf import csrf_exempt
 from pydantic import Json
 
 from zerver.lib.exceptions import JsonableError, ResourceNotFoundError
-from zerver.lib.integrations import INCOMING_WEBHOOK_INTEGRATIONS
+from zerver.lib.integrations import INCOMING_WEBHOOK_INTEGRATIONS, WEBHOOK_SIGNATURE_CONFIGS
 from zerver.lib.response import json_success
 from zerver.lib.typed_endpoint import PathOnly, typed_endpoint
-from zerver.lib.webhooks.common import call_fixture_to_headers, standardize_headers
+from zerver.lib.webhooks.common import (
+    call_fixture_to_headers,
+    compute_webhook_signature,
+    standardize_headers,
+)
 from zerver.models import UserProfile
 from zerver.models.realms import get_realm
 
@@ -163,17 +164,6 @@ def send_all_webhook_fixture_messages(
     return json_success(request, data={"responses": responses})
 
 
-def format_github_signature(secret_bytes: bytes, payload_bytes: bytes) -> tuple[str, str]:
-    """Formats signature header following X-Hub-Signature-256 standard."""
-    signed_payload = hmac.new(secret_bytes, payload_bytes, hashlib.sha256).hexdigest()
-    return "X_HUB_SIGNATURE_256", f"sha256={signed_payload}"
-
-
-SIGNATURE_REGISTRY: dict[str, Callable[[bytes, bytes], tuple[str, str]]] = {
-    "github": format_github_signature
-}
-
-
 @csrf_exempt
 def recalculate_signature(request: HttpRequest) -> JsonResponse:
     """
@@ -189,8 +179,7 @@ def recalculate_signature(request: HttpRequest) -> JsonResponse:
         payload_string = data.get("payload", "")
         integration_name = data.get("integration_name", "").lower().strip()
 
-        # Check if the integration has signature management registered
-        if integration_name not in SIGNATURE_REGISTRY:
+        if integration_name not in WEBHOOK_SIGNATURE_CONFIGS:
             return JsonResponse(
                 {"supported": False, "msg": "No signature rules configured for this platform."}
             )
@@ -198,17 +187,15 @@ def recalculate_signature(request: HttpRequest) -> JsonResponse:
         if not secret:
             return JsonResponse({"supported": True, "clear_signature": True})
 
-        # Normalize and minify JSON formats for crypto verification stability
         try:
             payload_bytes = orjson.dumps(orjson.loads(payload_string))
         except Exception:
             payload_bytes = force_bytes(payload_string)
 
         webhook_secret_bytes = force_bytes(secret)
-
-        # Execute the registered structural format strategy
-        formatter = SIGNATURE_REGISTRY[integration_name]
-        header_key, header_value = formatter(webhook_secret_bytes, payload_bytes)
+        config = WEBHOOK_SIGNATURE_CONFIGS[integration_name]
+        header_key = config.header
+        header_value = compute_webhook_signature(webhook_secret_bytes, payload_bytes, config)
 
         return JsonResponse(
             {
