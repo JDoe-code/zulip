@@ -25,6 +25,7 @@ from zerver.actions.message_send import (
     check_send_stream_message_by_id,
     send_rate_limited_pm_notification_to_bot_owner,
 )
+from zerver.lib.bot_config import ConfigError, get_bot_config
 from zerver.lib.exceptions import (
     AnomalousWebhookPayloadError,
     ErrorCode,
@@ -72,6 +73,16 @@ class WebhookConfigOption:
     name: str
     label: str
     validator: Callable[[str, str], str | bool | None]
+
+
+@dataclass(frozen=True)
+class WebhookSignatureConfig:
+    integration_name: str
+    header: str
+    algorithm: str = "sha256"
+    prefix: str = ""
+    custom_formatter: Callable[[str], str] | None = None
+    # This will override the default compute_webhook_signature function if provided for unique formats
 
 
 @dataclass
@@ -320,35 +331,75 @@ def parse_multipart_string(body: str) -> dict[str, str]:
     return data
 
 
+def validate_webhook_delivery(
+    request: HttpRequest,
+    user_profile: UserProfile,
+    config: WebhookSignatureConfig,
+) -> None:
+    try:
+        bot_config = get_bot_config(user_profile)
+        webhook_secret = bot_config.get(f"{config.integration_name.lower()}-webhook_secret", "")
+    except ConfigError:
+        webhook_secret = ""
+
+    if not webhook_secret:
+        return
+
+    signature_header = request.headers.get(config.header, "")
+    payload = request.body.decode("utf-8")
+
+    try:
+        validate_webhook_signature(
+            payload=payload, signature=signature_header, secret=webhook_secret, config=config
+        )
+    except JsonableError:
+        raise
+    except Exception as err:  # nocoverage
+        raise JsonableError(str(err))
+
+
 def validate_webhook_signature(
-    request: HttpRequest, payload: str, signature: str, algorithm: str = "sha256"
+    payload: str, signature: str, secret: str, config: WebhookSignatureConfig
 ) -> None:
     if not settings.VERIFY_WEBHOOK_SIGNATURES:  # nocoverage
         return
 
-    if algorithm not in hashlib.algorithms_available:
+    if config.algorithm not in hashlib.algorithms_available:
         raise AssertionError(
-            _("The algorithm '{algorithm}' is not supported.").format(algorithm=algorithm)
+            _("The algorithm '{algorithm}' is not supported.").format(algorithm=config.algorithm)
         )
 
-    webhook_secret: str | None = request.GET.get("webhook_secret")
-    if webhook_secret is None:
-        raise JsonableError(
-            _(
-                "The webhook secret is missing. Please set the webhook_secret while generating the URL."
-            )
-        )
-    webhook_secret_bytes = force_bytes(webhook_secret)
-    payload_bytes = force_bytes(payload)
+    if not secret:
+        raise JsonableError(_("Webhook secret is not configured for this bot."))
 
-    signed_payload = hmac.new(
-        webhook_secret_bytes,
-        payload_bytes,
-        algorithm,
-    ).hexdigest()
+    expected_header_val = compute_webhook_signature(
+        force_bytes(secret),
+        force_bytes(payload),
+        config,
+    )
 
-    if not constant_time_compare(signed_payload, signature):
+    if not constant_time_compare(expected_header_val, signature):
         raise JsonableError(_("Webhook signature verification failed."))
+
+
+def compute_webhook_signature(
+    secret_bytes: bytes,
+    payload_bytes: bytes,
+    config: WebhookSignatureConfig,
+) -> str:
+    """Computes and formats the HMAC signature for a webhook payload."""
+    signer = hmac.new(
+        secret_bytes,
+        payload_bytes,
+        config.algorithm,
+    )
+    digest = signer.hexdigest()
+
+    if config.custom_formatter is not None:
+        return config.custom_formatter(digest)
+    if config.prefix:
+        return f"{config.prefix}{digest}"
+    return digest
 
 
 def guess_zulip_user_from_external_account(
