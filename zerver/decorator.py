@@ -396,8 +396,8 @@ def webhook_view(
 
             if signature_config and settings.VERIFY_WEBHOOK_SIGNATURES:
                 validate_webhook_signature(
-                    user_profile,
                     request,
+                    user_profile,
                     signature_config,
                 )
 
