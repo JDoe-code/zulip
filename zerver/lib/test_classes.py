@@ -55,8 +55,8 @@ from zerver.actions.streams import bulk_add_subscriptions, bulk_remove_subscript
 from zerver.actions.user_settings import do_change_full_name, do_change_user_setting
 from zerver.actions.users import do_change_user_role
 from zerver.decorator import do_two_factor_login
-from zerver.lib.cache import bounce_key_prefix_for_testing
 from zerver.lib.bot_config import set_bot_config
+from zerver.lib.cache import bounce_key_prefix_for_testing
 from zerver.lib.email_notifications import MissedMessageData, handle_missedmessage_emails
 from zerver.lib.initial_password import initial_password
 from zerver.lib.integrations import WEBHOOK_SIGNATURE_CONFIGS
