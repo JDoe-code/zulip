@@ -332,44 +332,35 @@ def parse_multipart_string(body: str) -> dict[str, str]:
 
 
 def validate_webhook_signature(
-    user_profile: UserProfile,
     request: HttpRequest,
+    user_profile: UserProfile,
     config: WebhookSignatureConfig,
 ) -> None:
     try:
         bot_config = get_bot_config(user_profile)
         webhook_secret = bot_config.get(f"{config.integration_name.lower()}-webhook_secret", "")
-    except ConfigError:
+    except ConfigError:  # nocoverage
         webhook_secret = ""
 
     if not webhook_secret:
-        return
+        raise JsonableError(_("Webhook secret is not configured for this bot."))
 
     signature = request.headers.get(config.header, "")
     payload = request.body.decode("utf-8")
 
-    try:
-        if not settings.VERIFY_WEBHOOK_SIGNATURES:  # nocoverage
-            return
-        if config.algorithm not in hashlib.algorithms_available:
-            raise AssertionError(
-                _("The algorithm '{algorithm}' is not supported.").format(
-                    algorithm=config.algorithm
-                )
-            )
-        if not webhook_secret:
-            raise JsonableError(_("Webhook secret is not configured for this bot."))
-        expected_header_val = compute_webhook_signature(
-            force_bytes(webhook_secret),
-            force_bytes(payload),
-            config,
+    if not settings.VERIFY_WEBHOOK_SIGNATURES:  # nocoverage
+        return
+    if config.algorithm not in hashlib.algorithms_available:
+        raise AssertionError(
+            _("The algorithm '{algorithm}' is not supported.").format(algorithm=config.algorithm)
         )
-        if not constant_time_compare(expected_header_val, signature):
-            raise JsonableError(_("Webhook signature verification failed."))
-    except JsonableError:
-        raise
-    except Exception as err:  # nocoverage
-        raise JsonableError(str(err))
+    expected_header_val = compute_webhook_signature(
+        force_bytes(webhook_secret),
+        force_bytes(payload),
+        config,
+    )
+    if not constant_time_compare(expected_header_val, signature):
+        raise JsonableError(_("Webhook signature verification failed."))
 
 
 def compute_webhook_signature(
