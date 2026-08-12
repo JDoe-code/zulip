@@ -56,7 +56,7 @@ from zerver.lib.webhooks.common import (
     MissingHTTPEventHeaderError,
     WebhookSignatureConfig,
     notify_bot_owner_about_invalid_json,
-    validate_webhook_delivery,
+    validate_webhook_signature,
 )
 from zerver.models import UserProfile
 from zerver.models.clients import get_client
@@ -395,7 +395,11 @@ def webhook_view(
             )
 
             if signature_config and settings.VERIFY_WEBHOOK_SIGNATURES:
-                validate_webhook_delivery(request, user_profile, signature_config)
+                validate_webhook_signature(
+                    user_profile,
+                    request,
+                    signature_config,
+                )
 
             request_notes = RequestNotes.get_notes(request)
             request_notes.is_webhook_view = True
