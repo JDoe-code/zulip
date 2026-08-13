@@ -59,6 +59,8 @@ that this integration expects!
 SETUP_MESSAGE_TEMPLATE = "{integration} webhook has been successfully configured"
 SETUP_MESSAGE_USER_PART = " by {user_name}"
 
+WEBHOOK_SECRET_TOKEN_KEY = "{integration_name}:webhook_secret_token"
+
 OptionalUserSpecifiedTopicStr: TypeAlias = Annotated[str | None, ApiParamConfig("topic")]
 
 
@@ -334,22 +336,29 @@ def parse_multipart_string(body: str) -> dict[str, str]:
 def validate_webhook_signature(
     request: HttpRequest,
     user_profile: UserProfile,
-    config: WebhookSignatureConfig,
+    config: WebhookSignatureConfig | None,
 ) -> None:
+    if not settings.VERIFY_WEBHOOK_SIGNATURES or not config:
+        return
+
+    signature_header = request.headers.get(config.header)
+    if not signature_header:
+        return
+
     try:
         bot_config = get_bot_config(user_profile)
-        webhook_secret = bot_config.get(f"{config.integration_name.lower()}-webhook_secret", "")
-    except ConfigError:  # nocoverage
-        webhook_secret = ""
+    except ConfigError:
+        return
 
-    if not webhook_secret:
+    webhook_secret = bot_config.get(
+        WEBHOOK_SECRET_TOKEN_KEY.format(integration_name=config.integration_name.lower())
+    )
+
+    if not webhook_secret or not webhook_secret.strip():
         raise JsonableError(_("Webhook secret is not configured for this bot."))
 
-    signature = request.headers.get(config.header, "")
     payload = request.body.decode("utf-8")
 
-    if not settings.VERIFY_WEBHOOK_SIGNATURES:  # nocoverage
-        return
     if config.algorithm not in hashlib.algorithms_available:
         raise AssertionError(
             _("The algorithm '{algorithm}' is not supported.").format(algorithm=config.algorithm)
@@ -359,7 +368,7 @@ def validate_webhook_signature(
         force_bytes(payload),
         config,
     )
-    if not constant_time_compare(expected_header_val, signature):
+    if not constant_time_compare(expected_header_val, signature_header):
         raise JsonableError(_("Webhook signature verification failed."))
 
 

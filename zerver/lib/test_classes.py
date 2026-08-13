@@ -95,6 +95,7 @@ from zerver.lib.types import ProfileDataElementUpdateDict
 from zerver.lib.upload import upload_message_attachment_from_request
 from zerver.lib.user_groups import get_system_user_group_for_user
 from zerver.lib.webhooks.common import (
+    WEBHOOK_SECRET_TOKEN_KEY,
     call_fixture_to_headers,
     check_send_webhook_message,
     compute_webhook_signature,
@@ -2675,7 +2676,7 @@ You can fix this by adding "{complete_event_type}" to ALL_EVENT_TYPES for this w
         if webhook_secret is not None and config is not None:
             set_bot_config(
                 self.test_user,
-                f"{self.webhook_dir_name}-webhook_secret",
+                WEBHOOK_SECRET_TOKEN_KEY.format(integration_name=self.webhook_dir_name.lower()),
                 webhook_secret,
             )
 

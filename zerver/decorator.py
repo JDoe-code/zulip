@@ -393,13 +393,11 @@ def webhook_view(
                 allow_webhook_access=True,
                 client_name=full_webhook_client_name(webhook_client_name),
             )
-
-            if signature_config and settings.VERIFY_WEBHOOK_SIGNATURES:
-                validate_webhook_signature(
-                    request,
-                    user_profile,
-                    signature_config,
-                )
+            validate_webhook_signature(
+                request,
+                user_profile,
+                signature_config,
+            )
 
             request_notes = RequestNotes.get_notes(request)
             request_notes.is_webhook_view = True

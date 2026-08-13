@@ -12,7 +12,7 @@ from version import ZULIP_VERSION
 from zerver.actions.custom_profile_fields import try_add_realm_custom_profile_field
 from zerver.actions.streams import do_rename_stream
 from zerver.decorator import webhook_view
-from zerver.lib.bot_config import set_bot_config
+from zerver.lib.bot_config import ConfigError, set_bot_config
 from zerver.lib.exceptions import InvalidJSONError, JsonableError
 from zerver.lib.request import RequestNotes
 from zerver.lib.send_email import FromAddress
@@ -21,6 +21,7 @@ from zerver.lib.test_helpers import HostRequestMock
 from zerver.lib.webhooks.common import (
     INVALID_JSON_MESSAGE,
     MISSING_EVENT_HEADER_MESSAGE,
+    WEBHOOK_SECRET_TOKEN_KEY,
     MissingHTTPEventHeaderError,
     WebhookSignatureConfig,
     call_fixture_to_headers,
@@ -166,16 +167,39 @@ class WebhooksCommonTestCase(ZulipTestCase):
             force_bytes(webhook_secret), force_bytes(payload), config
         )
 
-        set_bot_config(webhook_bot, "github-webhook_secret", webhook_secret)
+        # 1. Missing header early return check
+        request = HostRequestMock(meta_data={})
+        request.user = webhook_bot
+        request.GET = QueryDict("", mutable=True)
+        request._body = force_bytes(payload)
+        validate_webhook_signature(request, webhook_bot, config)
+
+        # 2. ConfigError early return check
         request = HostRequestMock(meta_data={"HTTP_X_HUB_SIGNATURE_256": signature})
         request.user = webhook_bot
         request.GET = QueryDict("", mutable=True)
         request._body = force_bytes(payload)
+        with patch("zerver.lib.webhooks.common.get_bot_config", side_effect=ConfigError):
+            validate_webhook_signature(request, webhook_bot, config)
 
-        # Valid signature
+        # 3. Unconfigured secret initial pass
+        request = HostRequestMock(meta_data={"HTTP_X_HUB_SIGNATURE_256": signature})
+        request.user = webhook_bot
+        request.GET = QueryDict("", mutable=True)
+        request._body = force_bytes(payload)
         validate_webhook_signature(request, webhook_bot, config)
 
-        # Invalid signature
+        # 4. Valid signature with configured token key
+        set_bot_config(
+            webhook_bot, WEBHOOK_SECRET_TOKEN_KEY.format(integration_name="github"), webhook_secret
+        )
+        request = HostRequestMock(meta_data={"HTTP_X_HUB_SIGNATURE_256": signature})
+        request.user = webhook_bot
+        request.GET = QueryDict("", mutable=True)
+        request._body = force_bytes(payload)
+        validate_webhook_signature(request, webhook_bot, config)
+
+        # Invalid signature check
         request.META["HTTP_X_HUB_SIGNATURE_256"] = "sha256=invalid_signature"
         del request.headers
         with self.assertRaisesRegex(
@@ -184,8 +208,8 @@ class WebhooksCommonTestCase(ZulipTestCase):
         ):
             validate_webhook_signature(request, webhook_bot, config)
 
-        # Missing or empty secret
-        set_bot_config(webhook_bot, "github-webhook_secret", "")
+        # Missing secret check using token key
+        set_bot_config(webhook_bot, WEBHOOK_SECRET_TOKEN_KEY.format(integration_name="github"), "")
         request.META["HTTP_X_HUB_SIGNATURE_256"] = signature
         del request.headers
         with self.assertRaisesRegex(
@@ -193,6 +217,32 @@ class WebhooksCommonTestCase(ZulipTestCase):
             "Webhook secret is not configured for this bot.",
         ):
             validate_webhook_signature(request, webhook_bot, config=config)
+
+    def test_compute_webhook_signature_formatter_and_prefix(self) -> None:
+        # Tests the custom_formatter
+        config_formatter = WebhookSignatureConfig(
+            integration_name="test",
+            header="X-Test-Signature",
+            custom_formatter=lambda d: f"sha256={d.upper()}",
+        )
+        sig_formatter = compute_webhook_signature(b"secret", b"payload", config_formatter)
+        self.assertTrue(sig_formatter.startswith("sha256="))
+
+        # Tests prefix
+        config_prefix = WebhookSignatureConfig(
+            integration_name="test",
+            header="X-Test-Signature",
+            prefix="sha256=",
+        )
+        sig_prefix = compute_webhook_signature(b"secret", b"payload", config_prefix)
+        self.assertTrue(sig_prefix.startswith("sha256="))
+
+        config_default = WebhookSignatureConfig(
+            integration_name="test",
+            header="X-Test-Signature",
+        )
+        sig_default = compute_webhook_signature(b"secret", b"payload", config_default)
+        self.assertFalse(sig_default.startswith("sha256="))
 
     def test_check_send_webhook_message_returns_id(self) -> None:
         webhook_bot = get_user("webhook-bot@zulip.com", get_realm("zulip"))

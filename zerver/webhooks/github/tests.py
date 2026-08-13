@@ -858,7 +858,7 @@ A temporary team so that I can get some webhook fixtures!
     def test_github_webhook_bad_signature(self) -> None:
         with override_settings(VERIFY_WEBHOOK_SIGNATURES=True):
             url = self.build_webhook_url()
-            set_bot_config(self.test_user, "github-webhook_secret", self.WEBHOOK_TEST_SECRET)
+            set_bot_config(self.test_user, "github:webhook_secret_token", self.WEBHOOK_TEST_SECRET)
 
             result = self.client_post(
                 url,
@@ -894,7 +894,7 @@ A temporary team so that I can get some webhook fixtures!
         the request is processed normally without requiring signature verification."""
 
         with override_settings(VERIFY_WEBHOOK_SIGNATURES=True):
-            set_bot_config(self.test_user, "github-webhook_secret", "")
+            set_bot_config(self.test_user, "github:webhook_secret_token", "")
             expected_message = "GitHub webhook has been successfully configured by TomaszKolek."
             self.check_webhook("ping", TOPIC_REPO, expected_message)
 
