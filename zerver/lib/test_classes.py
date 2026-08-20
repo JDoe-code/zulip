@@ -2550,6 +2550,7 @@ class WebhookTestCase(ZulipTestCase):
         "/api/v1/external/{webhook_dir_name}?stream={stream}&api_key={api_key}"
     )
     WEBHOOK_TEST_SECRET: str | None = None
+    VERIFY_WEBHOOK_SIGNATURES: bool = True
 
     def get_webhook_dir_name(self) -> str:
         module_parts = self.__module__.split(".")
@@ -2565,6 +2566,19 @@ class WebhookTestCase(ZulipTestCase):
         self.channel_name = self.webhook_dir_name
         self.url_template = self.URL_TEMPLATE or self.DEFAULT_URL_TEMPLATE
         self.url = self.build_webhook_url()
+
+        if self.WEBHOOK_TEST_SECRET is not None:
+            config = WEBHOOK_SIGNATURE_CONFIGS.get(self.webhook_dir_name.lower())
+            if config is None:
+                raise AssertionError(
+                    f"WEBHOOK_TEST_SECRET was set for  '{self.webhook_dir_name}', "
+                    f"but no WebhookSignatureConfig is registered in WEBHOOK_SIGNATURE_CONFIGS."
+                )
+            set_bot_config(
+                self.test_user,
+                WEBHOOK_SECRET_TOKEN_KEY.format(integration_name=self.webhook_dir_name.lower()),
+                self.WEBHOOK_TEST_SECRET,
+            )
 
         function = import_string(
             f"zerver.webhooks.{self.webhook_dir_name}.view.api_{self.webhook_dir_name}_webhook"
@@ -2656,41 +2670,20 @@ You can fix this by adding "{complete_event_type}" to ALL_EVENT_TYPES for this w
         """
         self.subscribe(self.test_user, self.channel_name)
 
-        url = getattr(self, "url", None)
-        if url is None:
-            url = self.build_webhook_url()  # nocoverage
+        url = self.url
 
-        webhook_secret = getattr(self, "WEBHOOK_TEST_SECRET", None)
+        webhook_secret = self.WEBHOOK_TEST_SECRET
         config = WEBHOOK_SIGNATURE_CONFIGS.get(self.webhook_dir_name.lower())
-
-        if webhook_secret is not None and config is None:
-            raise AssertionError(
-                f"WEBHOOK_TEST_SECRET was set for '{self.webhook_dir_name}', "
-                f"but no WebhookSignatureConfig is registered in WEBHOOK_SIGNATURE_CONFIGS."
-            )
 
         payload = self.get_payload(fixture_name)
         if content_type is not None:
             extra["content_type"] = content_type
-
         if webhook_secret is not None and config is not None:
-            set_bot_config(
-                self.test_user,
-                WEBHOOK_SECRET_TOKEN_KEY.format(integration_name=self.webhook_dir_name.lower()),
-                webhook_secret,
-            )
-
-            try:
-                raw_payload = self.get_body(fixture_name)
-            except FileNotFoundError:  # nocoverage
-                raw_payload = ""
-
             header_val = compute_webhook_signature(
                 force_bytes(webhook_secret),
-                force_bytes(raw_payload),
+                force_bytes(payload),
                 config,
             )
-
             django_header = "HTTP_" + config.header.upper().replace("-", "_")
             if django_header not in extra:
                 extra[django_header] = header_val
@@ -2698,20 +2691,21 @@ You can fix this by adding "{complete_event_type}" to ALL_EVENT_TYPES for this w
         headers = call_fixture_to_headers(self.webhook_dir_name, fixture_name)
         headers = standardize_headers(headers)
         extra.update(headers)
-        try:
-            msg = self.send_webhook_payload(
-                self.test_user,
-                url,
-                payload,
-                **extra,
-            )
-        except EmptyResponseError:
-            if expect_noop:
-                return
-            else:
-                raise AssertionError(
-                    "No message was sent. Pass expect_noop=True if this is intentional."
+        with self.settings(VERIFY_WEBHOOK_SIGNATURES=self.VERIFY_WEBHOOK_SIGNATURES):
+            try:
+                msg = self.send_webhook_payload(
+                    self.test_user,
+                    url,
+                    payload,
+                    **extra,
                 )
+            except EmptyResponseError:
+                if expect_noop:
+                    return
+                else:
+                    raise AssertionError(
+                        "No message was sent. Pass expect_noop=True if this is intentional."
+                    )
 
         if expect_noop:
             raise Exception(
@@ -2758,10 +2752,6 @@ one or more new messages.
         check_webhook.
         """
 
-        webhook_secret = getattr(self, "WEBHOOK_TEST_SECRET", None)
-        if webhook_secret is not None:
-            set_bot_config(self.test_user, "webhook_secret", webhook_secret)  # nocoverage
-
         payload = self.get_payload(fixture_name)
         extra["content_type"] = content_type
 
@@ -2772,12 +2762,13 @@ one or more new messages.
         if sender is None:
             sender = self.test_user
 
-        msg = self.send_webhook_payload(
-            sender,
-            self.url,
-            payload,
-            **extra,
-        )
+        with self.settings(VERIFY_WEBHOOK_SIGNATURES=self.VERIFY_WEBHOOK_SIGNATURES):
+            msg = self.send_webhook_payload(
+                sender,
+                self.url,
+                payload,
+                **extra,
+            )
         self.assertEqual(msg.content, expected_message)
 
         return msg

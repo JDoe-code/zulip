@@ -83,8 +83,8 @@ class WebhookSignatureConfig:
     header: str
     algorithm: str = "sha256"
     prefix: str = ""
-    custom_formatter: Callable[[str], str] | None = None
     # This will override the default compute_webhook_signature function if provided for unique formats
+    custom_formatter: Callable[[str], str] | None = None
 
 
 @dataclass
@@ -386,7 +386,7 @@ def compute_webhook_signature(
     digest = signer.hexdigest()
 
     if config.custom_formatter is not None:
-        return config.custom_formatter(digest)
+        digest = config.custom_formatter(digest)
     if config.prefix:
         return f"{config.prefix}{digest}"
     return digest
