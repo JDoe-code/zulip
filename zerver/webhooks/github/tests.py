@@ -22,10 +22,12 @@ TOPIC_DISCUSSION = "webhook-tester discussion #3: Tips for Writing Clear and ...
 TOPIC_DISCUSSION_ANSWERS = "webhook-tester discussion #5: Understanding Project Direc..."
 TOPIC_DISCUSSION_COMMENT = "testing-gh discussion #20: Lets discuss"
 TOPIC_SPONSORS = "sponsors"
+WEBHOOK_SECRET = "testingthis"
 
 
 class GitHubWebhookTest(WebhookTestCase):
-    WEBHOOK_TEST_SECRET = "testingthis"
+    WEBHOOK_TEST_SECRET: str | None = WEBHOOK_SECRET
+    VERIFY_WEBHOOK_SIGNATURES: bool = True
 
     def test_ping_event(self) -> None:
         expected_message = "GitHub webhook has been successfully configured by TomaszKolek."
@@ -858,11 +860,10 @@ A temporary team so that I can get some webhook fixtures!
 
     def test_github_webhook_bad_signature(self) -> None:
         with override_settings(VERIFY_WEBHOOK_SIGNATURES=True):
-            url = self.build_webhook_url()
             set_bot_config(self.test_user, "webhook_secret", self.WEBHOOK_TEST_SECRET)
 
             result = self.client_post(
-                url,
+                self.url,
                 self.get_payload("ping"),
                 content_type="application/json",
                 HTTP_X_HUB_SIGNATURE_256="sha256=completely_invalid_hash_value",
@@ -874,22 +875,13 @@ A temporary team so that I can get some webhook fixtures!
         requests pass through even if the signature value is completely bogus.
         """
         self.VERIFY_WEBHOOK_SIGNATURES = False
-        try:
-            expected_message = "GitHub webhook has been successfully configured by TomaszKolek."
-            self.check_webhook(
+        expected_message = "GitHub webhook has been successfully configured by TomaszKolek."
+        self.check_webhook(
                 "ping",
                 TOPIC_REPO,
                 expected_message,
                 HTTP_X_HUB_SIGNATURE_256="sha256=invalid_hash",
             )
-        finally:
-            self.VERIFY_WEBHOOK_SIGNATURES = True
-
-    def test_github_webhook_valid_signature_success(self) -> None:
-        """Verifies that a mathematically correct HMAC signature passes
-        cleanly when verification enforcement is active."""
-        expected_message = "GitHub webhook has been successfully configured by TomaszKolek."
-        self.check_webhook("ping", TOPIC_REPO, expected_message)
 
     def test_github_webhook_missing_secret(self) -> None:
         """Verifies that the backend drops the request if the webhook secret
