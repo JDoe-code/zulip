@@ -2673,13 +2673,8 @@ You can fix this by adding "{complete_event_type}" to ALL_EVENT_TYPES for this w
         """
         self.subscribe(self.test_user, self.channel_name)
 
-        url = getattr(self, "url", None)
-        if url is None:
-            url = self.build_webhook_url()
-
-        webhook_secret = getattr(self, "WEBHOOK_TEST_SECRET", None)
-        if webhook_secret is not None:
-            set_bot_config(self.test_user, "webhook_secret", webhook_secret)
+        webhook_secret = self.WEBHOOK_TEST_SECRET
+        config = WEBHOOK_SIGNATURE_CONFIGS.get(self.webhook_dir_name.lower())
 
         payload = self.get_payload(fixture_name)
         if content_type is not None:
@@ -2699,16 +2694,21 @@ You can fix this by adding "{complete_event_type}" to ALL_EVENT_TYPES for this w
         headers = call_fixture_to_headers(self.webhook_dir_name, fixture_name)
         headers = standardize_headers(headers)
         extra.update(headers)
-        with self.settings(VERIFY_WEBHOOK_SIGNATURES=self.VERIFY_WEBHOOK_SIGNATURES):
-            try:
-                msg = self.send_webhook_payload(self.test_user, url, payload, **extra)
-            except EmptyResponseError:
-                if expect_noop:
-                    return
-                else:
-                    raise AssertionError(
-                        "No message was sent. Pass expect_noop=True if this is intentional."
+        try:
+            with self.settings(VERIFY_WEBHOOK_SIGNATURES=self.VERIFY_WEBHOOK_SIGNATURES):
+                    msg = self.send_webhook_payload(
+                        self.test_user,
+                        self.url,
+                        payload,
+                        **extra,
                     )
+        except EmptyResponseError:
+            if expect_noop:
+                return
+            else:
+                raise AssertionError(
+                    "No message was sent. Pass expect_noop=True if this is intentional."
+                )
 
         if expect_noop:
             raise Exception(
@@ -2754,11 +2754,6 @@ one or more new messages.
         Most webhooks send to streams, and you will want to look at
         check_webhook.
         """
-
-        webhook_secret = getattr(self, "WEBHOOK_TEST_SECRET", None)
-        if webhook_secret is not None:
-            set_bot_config(self.test_user, "webhook_secret", webhook_secret)
-
         payload = self.get_payload(fixture_name)
         extra["content_type"] = content_type
 

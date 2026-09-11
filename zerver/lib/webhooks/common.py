@@ -83,8 +83,6 @@ class WebhookSignatureConfig:
     integration_name: str
     header: str
     algorithm: str = "sha256"
-    prefix: str = ""
-    # This will override the default compute_webhook_signature function if provided for unique formats
     custom_formatter: Callable[[str], str] | None = None
 
 
@@ -371,11 +369,24 @@ def validate_webhook_signature(
         return
 
     if config.algorithm not in hashlib.algorithms_available:
-        raise AssertionError(
+        raise JsonableError(
             _("The algorithm '{algorithm}' is not supported.").format(algorithm=config.algorithm)
         )
 
-    if not secret:
+    signature_header = request.headers.get(config.header)
+    if not signature_header:
+        return
+
+    try:
+        bot_config = get_bot_config(user_profile)
+    except ConfigError:
+        raise JsonableError(_("Webhook secret is not configured for this bot."))
+
+    webhook_secret = bot_config.get(
+        WEBHOOK_SECRET_TOKEN_KEY.format(integration_name=config.integration_name.lower())
+    )
+
+    if not webhook_secret or not webhook_secret.strip():
         raise JsonableError(_("Webhook secret is not configured for this bot."))
 
     webhook_secret_bytes = force_bytes(secret)
@@ -406,8 +417,6 @@ def compute_webhook_signature(
 
     if config.custom_formatter is not None:
         digest = config.custom_formatter(digest)
-    if config.prefix:
-        return f"{config.prefix}{digest}"
     return digest
 
 
